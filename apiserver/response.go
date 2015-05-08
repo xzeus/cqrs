@@ -140,7 +140,6 @@ func (r *response) Error(message string, code int, status int, err error) error 
 	if r.flushed {
 		return ErrResponseFlushed
 	}
-	//log.Printf("* Response error: %s [ %s ]", message, err)
 	error_url := fmt.Sprintf(r.ErrorUrl(), code)
 	return r.Json(struct {
 		Status  int    `json:"status"`

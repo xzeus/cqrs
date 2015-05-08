@@ -12,7 +12,7 @@ func (depth DepthCount) Tab() string {
 }
 
 type RouteNode interface {
-	Define(...func(RouteNode)) RouteNode
+	Define(...RouteModifier) RouteNode
 	Parent() RouteNode
 	Depth() DepthCount
 	Path() string
@@ -48,7 +48,7 @@ func NewRouteNode(parent RouteNode, path string) RouteNode {
 	}
 }
 
-func (r *RouteNodeDef) Define(defs ...func(RouteNode)) RouteNode {
+func (r *RouteNodeDef) Define(defs ...RouteModifier) RouteNode {
 	for _, def := range defs {
 		def(r)
 	}
@@ -91,19 +91,17 @@ func (r *RouteNodeDef) RouteNodeHandlers() []RouteNodeHandler {
 	return r.handlers
 }
 
-func Middleware(key string, handler MiddlewareFunc) func(RouteNode) {
+func Middleware(key string, handler MiddlewareFunc) RouteModifier {
 	return func(r RouteNode) {
 		r.SetMiddleware(key, handler)
 	}
 }
 
-func Sub(path string, routes ...func(RouteNode)) func(RouteNode) {
+func Sub(path string, routes ...RouteModifier) RouteModifier {
 	return func(r RouteNode) {
 		route_node := NewRouteNode(r, path)
 		r.AppendNode(route_node)
 		for _, route := range routes {
-			//route_node := NewRouteNode(r, path)
-			//r.AppendNode(route_node)
 			route(route_node)
 		}
 	}
@@ -123,10 +121,6 @@ type RouteNodeHandlerDef struct {
 }
 
 func NewHandler(path string, methods []string, handler ApiFunc, mods ...func(RouteNodeHandler)) RouteNodeHandler {
-	//func NewHandler(path string, handler ApiFunc, mods ...func(*RouteNodeHandler)) *RouteNodeHandler {
-	//if methods == nil {
-	//	methods = make([]string, 0, 0)
-	//}
 	h := &RouteNodeHandlerDef{
 		methods: methods,
 		path:    path,

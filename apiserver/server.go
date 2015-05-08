@@ -49,12 +49,15 @@ type ProviderFunc func(*http.Request) func() ioc.Dependencies
 type MiddlewareFunc func(ApiFunc) ApiFunc
 type ApiFunc func(Request, Response)
 
+type RouteModifier func(RouteNode)
+type ServerModifier func(Server)
+
 type Handler struct {
 	Methods    []string
 	HandleFunc http.HandlerFunc
 }
 
-func DependencyProvider(p ProviderFunc) func(Server) {
+func DependencyProvider(p ProviderFunc) ServerModifier {
 	return func(s Server) {
 		s.SetDepsProvider(p)
 	}
@@ -62,8 +65,7 @@ func DependencyProvider(p ProviderFunc) func(Server) {
 
 type Server interface {
 	RouteNode
-	Config(...func(Server)) Server
-	Log(string, ...interface{})
+	Config(...ServerModifier) Server
 	//
 	SetDepsProvider(ProviderFunc)
 	AppendEndpoint(RouteNode)
@@ -91,15 +93,11 @@ func NewServer(p ProviderFunc) (Server, error) {
 	}, nil
 }
 
-func (s *ServerDef) Config(configs ...func(Server)) Server {
+func (s *ServerDef) Config(configs ...ServerModifier) Server {
 	for _, config := range configs {
 		config(s)
 	}
 	return s
-}
-
-func (s *ServerDef) Log(pattern string, values ...interface{}) {
-	//log.Printf(pattern, values)
 }
 
 //
@@ -157,7 +155,6 @@ func (s *ServerDef) Compose() map[string]Handler {
 			h := handler
 			path := makePath(path_stack, h.Path())
 			middleware := flattenMiddlewareStack(middleware_stack)
-			//log.Printf("Middleware: [ %d ]", len(middleware))
 			r[path] = Handler{
 				Methods:    h.Methods(),
 				HandleFunc: makeHandlerFunc(node, h, s, path, middleware),
@@ -177,7 +174,6 @@ func (s *ServerDef) BuildRouter() http.Handler {
 	r := mux.NewRouter()
 	c := s.Compose()
 	for p, h := range c {
-		//log.Printf("\n**\t[ %s ] => [ %#v ]\n", p, h)
 		r.HandleFunc(p, h.HandleFunc).Methods(h.Methods...)
 	}
 	return r
@@ -210,7 +206,6 @@ func makeHandlerFunc(n RouteNode, handler RouteNodeHandler, s Server, path strin
 		}()
 		t := handler.Handler()
 
-		//for _, m := range s.Middleware() {
 		for _, m := range middleware {
 			t = m(t)
 		}
@@ -218,39 +213,6 @@ func makeHandlerFunc(n RouteNode, handler RouteNodeHandler, s Server, path strin
 	}
 	return h
 }
-
-// Provides a lightweight middleware which configures CORS
-func CORS(h ApiFunc) ApiFunc {
-	//log.Printf("Load CORS")
-	return func(req Request, resp Response) {
-		r := req.Request()
-		ref := r.Referer()
-		if ref == "" {
-			if r.TLS == nil {
-				ref = "http://" + r.Host
-			} else {
-				ref = "https://" + r.Host
-			}
-		}
-		ref = strings.TrimRight(ref, "/")
-
-		resp.Recorder().Header().Set(CORS_AccessControlAllowOrigin, ref) // Omit trailing slash
-		resp.Recorder().Header().Set(CORS_AccessControlAllowMethods, CORS_DefaultMethods)
-		resp.Recorder().Header().Set(CORS_AccessControlAllowHeaders, CORS_DefaultHeaders)
-		if r.Method != OPTIONS {
-			h(req, resp)
-		}
-	}
-}
-
-/*
-	l := len(ref)
-	if l > 0 && ref[l:] == "/" {
-		ref = ref[:l-1]
-	}
-*/
-//host := ref + r.Host
-//resp.Recorder().Header().Set(CORS_XFrameOptions, CORS_DefaultXFrameOptions)
 
 func ExtractValue(url *url.URL, key string, default_value int) (result int) {
 	var err error

@@ -19,8 +19,8 @@ func Publish(req Request, id int64, p cqrs.MessageDefiner, mods ...func(*cqrs.Me
 	deps := req.Deps()
 	d := p.Domain()
 	o := cqrs.NewMessageOptions(id, 0, 0)
-	for _, m := range mods {
-		m(o)
+	for _, mod := range mods {
+		mod(o)
 	}
 	c := cqrs.NewMessage(o.Id(), o.Version(), o.Timestamp(), cqrs.NoOrigin, p)
 	d.Handler(deps, c)
@@ -30,6 +30,7 @@ func CommandHandler(m cqrs.MessageDefiner, requireBody bool) ApiFunc {
 	return func(req Request, resp Response) {
 		var id int64
 		if t, err := req.GetToken("session"); err != nil {
+			log.Printf("No session token found so one was generated")
 			id = req.Deps().Crypto().RandInt64()
 		} else { // Should have been verified by middleware if required
 			if err != nil {
@@ -44,6 +45,7 @@ func CommandHandler(m cqrs.MessageDefiner, requireBody bool) ApiFunc {
 				return
 			}
 		}
+		log.Printf("Session Id [ %X ]", uint64(id))
 		if err := req.Json(m); requireBody && err != nil {
 			resp.Error(fmt.Sprintf("invalid request: [ %s ]", err), 40030, 500, err)
 			return
@@ -57,57 +59,26 @@ func CommandHandler(m cqrs.MessageDefiner, requireBody bool) ApiFunc {
 //func Domain(d cqrs.Domain, mods ...CommandModifier) func(RouteNode) {
 // Domain(..., WhitelistCommand)
 func Domain(d cqrs.Domain, mods ...func(RouteNodeHandler)) func(RouteNode) {
-	//m := ValidateToken("session", FromHeader(), FromQueryString("state"))
 	return func(r RouteNode) {
-		//route_node := NewRouteNode(r, "")
-		//r.AppendNode(route_node)
 		for _, f := range d.Commands() {
 			c := f()
 			Command(c, true, mods...)(r)
-			/*
-				n := strings.ToLower(d.MessageName(c))
-				//h := NewHandler(n, []string{"POST", "OPTIONS"}, m(CommandHandler(c)))
-				h := NewHandler(n, []string{"POST", "OPTIONS"}, CommandHandler(c))
-				r.AppendHandler(h)
-			*/
 		}
 	}
 }
 
-func ValidateToken(token_key string, sources ...TokenSource) MiddlewareFunc {
-	return func(h ApiFunc) ApiFunc {
-		return func(req Request, resp Response) {
-			if req.Request().Method != OPTIONS {
-				if _, err := req.GetToken(token_key, sources...); err != nil {
-					resp.Error("invalid session", 40060, 500, ErrInvalidToken)
-					return
-				}
-			}
-			h(req, resp)
-		}
-	}
-}
-
-//func Command(c cqrs.MessageDefiner, handler ApiFunc, mods ...func(*RouteNodeHandler)) func(RouteNode) {
 func Command(c cqrs.MessageDefiner, requireBody bool, mods ...func(RouteNodeHandler)) func(RouteNode) {
-	//m := ValidateToken("session", FromHeader(), FromQueryString("state"))
 	d := c.Domain()
 	n := strings.ToLower(d.MessageName(c))
 	return func(r RouteNode) {
-
-		//h := NewHandler(n, []string{"POST", "OPTIONS"}, m(CommandHandler(c)), mods...)
 		h := NewHandler(n, []string{"POST", "OPTIONS"}, CommandHandler(c, requireBody), mods...)
-		//h := NewHandler(n, r.Methods(), CommandHandler(c), mods...)
 		r.AppendHandler(h)
 	}
 }
 
 func View(path string, handler ApiFunc, mods ...func(RouteNodeHandler)) func(RouteNode) {
-	//m := ValidateToken("session", FromHeader(), FromQueryString("state"))
 	return func(r RouteNode) {
-		//h := NewHandler(path, []string{"GET"}, m(handler), mods...)
 		h := NewHandler(path, []string{"GET"}, handler, mods...)
-		//h := NewHandler(path, r.Methods(), handler, mods...)
 		r.AppendHandler(h)
 	}
 }
@@ -151,13 +122,12 @@ func ByStringFromPath(f ViewByStringFunc) ApiFunc {
 
 func ByIdFromSession(f ViewByIdLoaderFunc) ApiFunc {
 	return func(req Request, resp Response) {
-		if t, err := req.GetToken("session", FromHeader()); err != nil {
+		if t, err := req.GetToken("session"); err != nil {
 			resp.Error("invalid session", 40080, 500, err)
-		} else {
+		} else { // Session token found
 			if session_id, err := Int64(t.GetId()); err != nil {
 				resp.Error("invalid session id", 40100, 500, err)
-			} else {
-				//v, err := f(req.Deps(),req.Session().Id())
+			} else { // Session Id was a valid value
 				v, err := f(req.Deps(), session_id)
 				resp.View(v, err)
 			}

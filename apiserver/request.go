@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"strings"
 )
 
 type Int32Extractor func() (int32, bool)
@@ -21,7 +20,7 @@ type BinaryExtractor func() ([]byte, bool)
 type Request interface {
 	Deps() ioc.Dependencies
 	Request() *http.Request
-	GetToken(string, ...TokenSource) (*j.TokenDef, error)
+	GetToken(string) (*j.TokenDef, error)
 	BaseUri() string
 	Segment() (string, error)
 	ExtractInt32ElementId() (int32, bool)
@@ -56,54 +55,15 @@ func (r *request) Request() *http.Request {
 	return r.request
 }
 
-type TokenSource func(Request, string) string
-
-func FromHeader() TokenSource {
-	return func(r Request, key string) string {
-		return r.Request().Header.Get(fmt.Sprintf("x-%s-token", key))
-	}
+func (r *request) PutToken(key string, t *j.TokenDef) {
+	r.tokens[key] = t
 }
 
-func FromQueryString(param string) TokenSource {
-	return func(r Request, key string) string {
-		return r.Request().URL.Query().Get(param)
-	}
-}
-
-// GetToken returns a validated token from the request with key pattern x-{key}-token i.e. x-session-token
-func (r *request) GetToken(key string, sources ...TokenSource) (t *j.TokenDef, err error) {
-	key = strings.ToLower(key)
+func (r *request) GetToken(key string) (*j.TokenDef, error) {
 	if t, ok := r.tokens[key]; ok {
-		//log.Printf("Cached token [ %s ]", key)
 		return t, nil
 	}
-	if len(sources) == 0 { // Default to header
-		sources = append(sources, FromHeader())
-	}
-	err = ErrInvalidToken
-	for _, s := range sources {
-		if t_str := s(r, key); t_str == "" {
-			continue
-		} else { // Got some data from the source
-			//log.Printf("Got some token data for [ %s ] from source [ %s ]", key, t_str)
-			// TODO: Extract configuration of token read somewhere (deps?)
-			c := r.deps.Crypto()
-			if t, err = c.DecodeToken([]byte(t_str), j.RemoveConstraints(j.None_Algo)); err != nil {
-				//if t, err = j.Decode([]byte(t_str), j.RemoveConstraints(j.None_Algo)); err != nil {
-				continue
-			}
-			if errs := t.Validate(); errs != nil && len(errs) > 0 {
-				err = ErrInvalidToken
-				continue
-			}
-			err = nil // Found a good token, ignore previous errors
-			r.tokens[key] = t
-		}
-	}
-	if err != nil {
-		return nil, err
-	}
-	return
+	return nil, ErrInvalidToken
 }
 
 func (r *request) BaseUri() (result string) {
