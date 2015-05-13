@@ -1,7 +1,8 @@
 package cqrs
 
 import (
-//"log"
+	//"log"
+	"fmt"
 )
 
 type MessageTypeId int64
@@ -40,6 +41,7 @@ func IsCommand(id int64) bool {
 }
 
 type Domain interface {
+	fmt.Stringer
 	Uri() string
 	Id() int64
 	Name() string
@@ -63,6 +65,7 @@ type MessageTypeContainer interface {
 
 type MessageType interface {
 	Domain() Domain
+	New() MessageDefiner
 	IsCommand() bool
 	MessageTypeId() MessageTypeId
 	DisplayName() string
@@ -70,7 +73,6 @@ type MessageType interface {
 	CanonicalName() string
 	Version() uint8
 	Id() int64
-	NewPayload() MessageDefiner
 }
 
 type DomainLinker interface {
@@ -79,13 +81,8 @@ type DomainLinker interface {
 
 type MessageDefiner interface {
 	DomainLinker
+	New() MessageDefiner
 }
-
-type DomainMessage struct {
-	MessageDefiner
-}
-
-func (__ DomainMessage) Clone() MessageDefiner { return __.Domain().MessageTypes().ByInstance(__) }
 
 type Aggregate interface {
 	Init() Aggregate
@@ -108,33 +105,4 @@ type Header interface {
 }
 
 type Payload interface {
-}
-
-var BoundedContext = &BC{}
-
-type BC struct{}
-
-func (_ *BC) Register(t interface{}) interface{} {
-	return nil
-}
-
-type CommandContext struct {
-	Aggregate Aggregate
-	Events    <-chan Event
-	Command   Command
-}
-
-func (ctx *CommandContext) ExecAsync() <-chan EventMessage {
-	respChan := make(chan EventMessage, 1)
-	go func(_ctx *CommandContext) {
-		for e := range ctx.Events {
-			ctx.Aggregate = ctx.Aggregate.Apply(e)
-		}
-		respChan <- ctx.Aggregate.Handle(ctx.Command)
-	}(ctx)
-	return respChan
-}
-
-func (ctx *CommandContext) ExecSync() EventMessage {
-	return <-ctx.ExecAsync()
 }

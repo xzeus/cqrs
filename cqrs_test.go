@@ -1,32 +1,38 @@
 package cqrs_test
 
 import (
-	"fmt"
-	. "github.com/smartystreets/goconvey/convey"
+	. "github.com/stretchr/testify/assert"
 	"github.com/xzeus/cqrs"
+	"github.com/xzeus/cqrs/mocks/testdomain/v1"
 	"testing"
 )
 
-func TestCqrs(t *testing.T) {
-	Convey("Given message type defs", t, func() {
-		ms := []struct {
-			version uint8
-			type_id int64
-		}{
-			{version: 1, type_id: 1},
-		}
-		for i, m := range ms {
-			Convey(fmt.Sprintf("[ %d ] Should make and verify message types", i), func() {
-				mt_command := cqrs.MakeVersionedCommandType(m.type_id, m.version)
-				So(mt_command.IsCommand(), ShouldBeTrue)
-				mt_event := cqrs.MakeVersionedEventType(m.type_id, m.version)
-				So(mt_event.IsCommand(), ShouldBeFalse)
-				So(mt_command, ShouldNotEqual, mt_event)
-			})
-		}
-	})
+func Test_MessageType_GenerateValidIds(t *testing.T) {
+	ms := []struct {
+		version uint8
+		type_id int64
+	}{
+		{version: 1, type_id: 1},
+		{version: 100, type_id: 1},
+		{version: 1, type_id: 10000},
+	}
+	for i, m := range ms {
+		msg := "Typedef index [ %d ]"
+		mt_command := cqrs.MakeVersionedCommandType(m.type_id, m.version)
+		mt_event := cqrs.MakeVersionedEventType(m.type_id, m.version)
+		True(t, mt_command.IsCommand(), msg, i)
+		False(t, mt_event.IsCommand(), msg, i)
+		NotEqual(t, mt_event, mt_command, msg, i)
+	}
+}
 
-	//Convey("Given a valid command context", t, func() {
-
-	//})
+func Test_MessageInstance_New(t *testing.T) {
+	m := &testdomain.SetEmpty{}
+	c := m.Domain().MessageTypes().ByInstance(m).New()
+	NotNil(t, c)
+	IsType(t, m, c)
+	m2 := testdomain.SetEmpty{}
+	c = m2.Domain().MessageTypes().ByInstance(m2).New()
+	NotNil(t, c)
+	IsType(t, &m2, c)
 }

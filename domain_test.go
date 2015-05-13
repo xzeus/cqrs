@@ -1,13 +1,13 @@
 package cqrs_test
 
 import (
-	//"fmt"
 	. "github.com/stretchr/testify/assert"
 	"github.com/vizidrix/crypto"
 	"github.com/xzeus/cqrs"
 	"github.com/xzeus/cqrs/mocks/testdomain/v1"
 	"reflect"
 	//"log"
+	"fmt"
 	"testing"
 )
 
@@ -44,6 +44,12 @@ func Test_Messages_parsed_correctly(t *testing.T) {
 	d, err := cqrs.Compile(m)
 	Nil(t, err)
 	NotPanics(t, func() { cqrs.MustCompile(m) })
+	d_str := d.String()
+	Equal(t, "testdomain", d.Name())
+	Equal(t, int32(1), d.Version())
+
+	Contains(t, d_str, d.Name())
+	Contains(t, d_str, fmt.Sprintf("%d", d.Version()))
 	for i, m := range d.MessageTypes().All() {
 		e := messages[i]
 		id := crypto.CrcHash64([]byte(m.CanonicalName()))
@@ -56,7 +62,7 @@ func Test_Messages_parsed_correctly(t *testing.T) {
 		Equal(t, m.DisplayName(), e.displayname)
 		Equal(t, m.LowerName(), e.lowername)
 		Equal(t, m.Id(), e.id)
-		Equal(t, reflect.TypeOf(m.NewPayload()), reflect.TypeOf(e.proto))
+		Equal(t, reflect.TypeOf(m.New()), reflect.TypeOf(e.proto))
 		m1 := d.MessageTypes().ByInstance(e.proto)
 		msg := "Message by instance [ %s ]"
 		if NotNil(t, m1, msg, m.CanonicalName()) {
@@ -92,7 +98,7 @@ func Test_Message_projections_return_by_lookup(t *testing.T) {
 		e := messages[i]
 		if e.command {
 			c_set := d.MessageTypes().Commands()
-			Equal(t, m.CanonicalName(), c_set.ByInstance(m.NewPayload()).CanonicalName())
+			Equal(t, m.CanonicalName(), c_set.ByInstance(m.New()).CanonicalName())
 			Equal(t, m.CanonicalName(), c_set.ByMessageTypeId(m.MessageTypeId()).CanonicalName())
 			cs := c_set.All()
 			mult := c_set.ByMessageTypeIds(cs[0].MessageTypeId(), cs[1].MessageTypeId())
@@ -100,7 +106,7 @@ func Test_Message_projections_return_by_lookup(t *testing.T) {
 			Equal(t, mult[1].CanonicalName(), cs[1].CanonicalName())
 		} else {
 			e_set := d.MessageTypes().Events()
-			Equal(t, m.CanonicalName(), e_set.ByInstance(m.NewPayload()).CanonicalName())
+			Equal(t, m.CanonicalName(), e_set.ByInstance(m.New()).CanonicalName())
 			Equal(t, m.CanonicalName(), e_set.ByMessageTypeId(m.MessageTypeId()).CanonicalName())
 			es := e_set.All()
 			mult := e_set.ByMessageTypeIds(es[0].MessageTypeId(), es[1].MessageTypeId())
@@ -119,13 +125,13 @@ func Test_Message_projections_invalid_lookup(t *testing.T) {
 		if e.command {
 			inv := all[2:]
 			c_set := d.MessageTypes().Commands()
-			Nil(t, c_set.ByInstance(inv[0].NewPayload()))
+			Nil(t, c_set.ByInstance(inv[0].New()))
 			Nil(t, c_set.ByMessageTypeId(inv[0].MessageTypeId()))
 			Nil(t, c_set.ByMessageTypeIds(inv[0].MessageTypeId(), inv[1].MessageTypeId()))
 		} else {
 			inv := all[:2]
 			e_set := d.MessageTypes().Events()
-			Nil(t, e_set.ByInstance(inv[0].NewPayload()))
+			Nil(t, e_set.ByInstance(inv[0].New()))
 			Nil(t, e_set.ByMessageTypeId(inv[0].MessageTypeId()))
 			Nil(t, e_set.ByMessageTypeIds(inv[0].MessageTypeId(), inv[1].MessageTypeId()))
 		}

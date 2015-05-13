@@ -1,10 +1,11 @@
 package cqrs
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"github.com/vizidrix/crypto"
-	//"log"
+	"log"
 	"reflect"
 	"sort"
 	"strconv"
@@ -21,6 +22,14 @@ var (
 	ErrInvalidMessageVersion = errors.New("invalid message version in defintion")
 )
 
+const slash = "/"
+
+func DomainFromMeta(meta interface{}) Domain {
+	d := MustCompile(meta)
+	log.Printf("\nLoaded Domain From Meta [ %s ]", d)
+	return d
+}
+
 func NewMessageTypeContainer(defs ...*MessageTypeDef) MessageTypeContainer {
 	sort.Sort(ByPurposeAndName(defs))
 	l := len(defs)
@@ -28,12 +37,20 @@ func NewMessageTypeContainer(defs ...*MessageTypeDef) MessageTypeContainer {
 		defs:          defs,
 		command_count: 0,
 		cache_all:     make([]MessageType, l, l),
-		cache_type:    make(map[reflect.Type]MessageType),
+		cache_type:    make(map[string]MessageType),
 		cache_typeid:  make(map[MessageTypeId]MessageType),
 	}
 	for i, m := range defs {
 		r.cache_all[i] = m
-		r.cache_type[reflect.TypeOf(m.NewPayload())] = m
+		t := reflect.TypeOf(m.New())
+		if t.Kind() == reflect.Ptr {
+			t = t.Elem()
+		}
+		var b bytes.Buffer
+		b.WriteString(t.PkgPath())
+		b.WriteString(slash)
+		b.WriteString(t.Name())
+		r.cache_type[b.String()] = m
 		r.cache_typeid[m.MessageTypeId()] = m
 		if r.command_count == 0 {
 			if !m.iscommand { // Swap to event parsing
@@ -50,7 +67,17 @@ type DomainDef struct {
 	name                 string
 	version              int32
 	proto                func() Aggregate
+	numbcommand          int
 	messagetypecontainer MessageTypeContainer
+}
+
+func (d *DomainDef) String() string {
+	b := &bytes.Buffer{}
+	b.WriteString(fmt.Sprintf("\n\nDOMAIN [ %s v%d ] @ [ %s ] id[ %X ]", d.name, d.version, d.uri, uint64(d.id)))
+	for i, m := range d.MessageTypes().All() {
+		b.WriteString(fmt.Sprintf("\n\t[%d]: %s", i, m))
+	}
+	return b.String()
 }
 
 func (d *DomainDef) Uri() string {
@@ -122,7 +149,7 @@ type MessageTypeContainerDef struct {
 	defs          []*MessageTypeDef
 	command_count int
 	cache_all     []MessageType
-	cache_type    map[reflect.Type]MessageType
+	cache_type    map[string]MessageType
 	cache_typeid  map[MessageTypeId]MessageType
 }
 
@@ -131,7 +158,15 @@ func (set *MessageTypeContainerDef) All() []MessageType {
 }
 
 func (set *MessageTypeContainerDef) ByInstance(t interface{}) MessageType {
-	return set.cache_type[reflect.TypeOf(t)]
+	t_type := reflect.TypeOf(t)
+	if t_type.Kind() == reflect.Ptr {
+		t_type = t_type.Elem()
+	}
+	var b bytes.Buffer
+	b.WriteString(t_type.PkgPath())
+	b.WriteString(slash)
+	b.WriteString(t_type.Name())
+	return set.cache_type[b.String()]
 }
 
 func (set *MessageTypeContainerDef) ByMessageTypeId(id MessageTypeId) MessageType {
@@ -173,6 +208,16 @@ type MessageTypeDef struct {
 	proto         func() MessageDefiner
 }
 
+func (m *MessageTypeDef) String() string {
+	b := bytes.Buffer{}
+	t := "CMD"
+	if !m.iscommand {
+		t = "EVT"
+	}
+	b.WriteString(fmt.Sprintf("%s { %s }", t, m.CanonicalName()))
+	return b.String()
+}
+
 type ByPurposeAndName []*MessageTypeDef
 
 func (set ByPurposeAndName) Len() int      { return len(set) }
@@ -184,6 +229,10 @@ func (set ByPurposeAndName) Less(i, j int) bool {
 
 func (d *MessageTypeDef) Domain() Domain {
 	return d.domain
+}
+
+func (d *MessageTypeDef) New() MessageDefiner {
+	return d.proto()
 }
 
 func (d *MessageTypeDef) MessageTypeId() MessageTypeId {
@@ -214,14 +263,18 @@ func (d *MessageTypeDef) Id() int64 {
 	return d.id
 }
 
-func (d *MessageTypeDef) NewPayload() MessageDefiner {
-	return d.proto()
-}
-
 var (
 	i_aggregate      = reflect.TypeOf((*Aggregate)(nil)).Elem()
 	i_messagedefiner = reflect.TypeOf((*MessageDefiner)(nil)).Elem()
 )
+
+func MustCompile(meta interface{}) Domain {
+	d, err := Compile(meta)
+	if err != nil {
+		panic(err)
+	}
+	return d
+}
 
 func Compile(meta interface{}) (Domain, error) {
 	var err error
@@ -345,12 +398,4 @@ func Compile(meta interface{}) (Domain, error) {
 	d.messagetypecontainer = NewMessageTypeContainer(types...)
 
 	return d, nil
-}
-
-func MustCompile(meta interface{}) Domain {
-	d, err := Compile(meta)
-	if err != nil {
-		panic(err)
-	}
-	return d
 }

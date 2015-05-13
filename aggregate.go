@@ -52,6 +52,7 @@ type MessageDef struct {
 	Data []byte `datastore:",noindex" json:"dat"`
 }
 
+// [  ]
 /*
 func (m *MessageDef) String() string {
 	var msg string

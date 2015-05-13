@@ -10,11 +10,12 @@ var (
 	ErrValueEmpty = errors.New("cannot set empty value")
 )
 
-var domain = MustCompile(Meta{})
+var DomainRef = DomainFromMeta(Meta{})
 
-type __ struct{ DomainMessage }
+type __ struct{}
 
-func (_ __) Domain() Domain { return domain }
+func (_ __) Domain() Domain       { return DomainRef }
+func (__ __) New() MessageDefiner { return DomainRef.MessageTypes().ByInstance(__) }
 
 type Meta struct {
 	Aggregate TestDomain
