@@ -1,7 +1,6 @@
 package cqrs
 
 import (
-	//"log"
 	"fmt"
 )
 
@@ -47,20 +46,10 @@ type Domain interface {
 	Name() string
 	Version() int32
 	NewAggregate() Aggregate
-	MessageTypes() MessageTypeContainer
-}
-
-type MessageTypeSet interface {
-	All() []MessageType
-	ByInstance(interface{}) MessageType
-	ByMessageTypeId(MessageTypeId) MessageType
-	ByMessageTypeIds(...MessageTypeId) []MessageType
-}
-
-type MessageTypeContainer interface {
-	MessageTypeSet
-	Commands() MessageTypeSet
-	Events() MessageTypeSet
+	MessageTypes() []MessageType
+	MessageTypeDefs() []MessageTypeDef
+	CommandType(MessageDefiner) (MessageType, error)
+	EventType(MessageDefiner) (MessageType, error)
 }
 
 type MessageType interface {
@@ -81,7 +70,6 @@ type DomainLinker interface {
 
 type MessageDefiner interface {
 	DomainLinker
-	New() MessageDefiner
 }
 
 type Aggregate interface {
@@ -91,18 +79,15 @@ type Aggregate interface {
 }
 
 type Event interface {
-	Message() EventMessage
+	Message() MessageDefiner
 }
 
-type EventMessage interface {
-}
+type EventMessage interface{}
 
 type Command interface {
-	Message() interface{}
+	Message() MessageDefiner
 }
 
-type Header interface {
-}
+type Header interface{}
 
-type Payload interface {
-}
+type Payload interface{}

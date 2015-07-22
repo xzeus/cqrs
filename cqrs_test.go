@@ -3,7 +3,7 @@ package cqrs_test
 import (
 	. "github.com/stretchr/testify/assert"
 	"github.com/xzeus/cqrs"
-	"github.com/xzeus/cqrs/mocks/testdomain/v1"
+	//"github.com/xzeus/cqrs/mocks/testdomain/v1"
 	"testing"
 )
 
@@ -26,6 +26,7 @@ func Test_MessageType_GenerateValidIds(t *testing.T) {
 	}
 }
 
+/*
 func Test_MessageInstance_New(t *testing.T) {
 	m := &testdomain.SetEmpty{}
 	c := m.Domain().MessageTypes().ByInstance(m).New()
@@ -36,3 +37,4 @@ func Test_MessageInstance_New(t *testing.T) {
 	NotNil(t, c)
 	IsType(t, &m2, c)
 }
+*/

@@ -6,6 +6,7 @@ import (
 //"fmt"
 )
 
+/*
 // HostDef is a structured header describing the location component of the an aggregate definition
 type HostDef struct {
 	// host represents a logical or physical boundary
@@ -16,42 +17,53 @@ type HostDef struct {
 	// tenant represents an implicit partition within a domain to enforce data segregation
 	TenantId int64 `datastore:",noindex" json:"ten"`
 } // 24 bits / host
+*/
 
 // AggregateDef is a structured header describing the identity component of an aggregate instance
 type AggregateDef struct {
+	// bounded context is a logical container around one or more domain instances
+	BoundedContextId int64 `json:"bc"`
 	// domain is the type of aggregate (type is semantically equivalent to doman)
-	DomainId int64 `datastore:",noindex" json:"dom"`
+	DomainId int64 `json:"dom"`
 	// id is an [application / domain] unique identifier for the aggregate instance
 	// and should never be duplicated within that partition
-	Id int64 `datastore:",noindex" json:"id"`
+	Id int64 `json:"id"`
 	// version establishes a deterministic order for events
-	Version int64 `datastore:",noindex" json:"ver"`
-	// clock is a lamport incrementing counter to establish fuzzy causal ordering
-	Clock int64 `json:"clk"`
-	// tiemstamp is a unix timestamp from the processing server (*unreliable for causation)
-	Timestamp int64 `datastore:",noindex" json:"tim"`
+	Version int64 `json:"ver"`
 }
 
+type MessageDef struct {
+	// clock is a bc scoped lamport incrementing counter to establish fuzzy causal ordering
+	Clock int64 `json:"clk"`
+	// MessageType is a domain unique identifier for the type of
+	// message which captures the semantic intent of the command or event
+	MessageTypeId MessageTypeId `json:"typ"`
+	// Contains the message payload
+	Payload []byte `json:"dat"`
+}
+
+// tiemstamp is a unix timestamp from the processing server (*unreliable for causation)
+//Timestamp int64 `datastore:",noindex" json:"tim"`
+
+/*
 type MetadataDef struct {
 	// Expresses a non integer identifier which is used with consistant hashing at commit
 	// to establish a strictly identified location for the aggregate at rest
-	Key []byte `datastore:",noindex" json:"key, omitempty"`
+	//Key []byte `datastore:",noindex" json:"key, omitempty"`
 	// Establishes causation for a given message
 	Origin []AggregateDef `datastore:",noindex" json:"org, omitempty"`
 	// Enables authorization delegation across domains and bounded contexts
 	Tokens [][]byte `datastore:",noindex" json:"tok, omitempty"`
-	// MessageType is an [ application / domain ] unique identifier for the type of
-	// message which captures the semantic intent of the command or event
-	MessageType MessageType `datastore:",noindex" json:"typ"`
-}
 
-type MessageDef struct {
-	AggregateDef
-	MetadataDef
-	// Contains the message payload
-	Data []byte `datastore:",noindex" json:"dat"`
 }
+*/
 
+/*
+// Defines the identity of the message
+	Header AggregateDef
+*/
+
+//MetadataDef
 // [  ]
 /*
 func (m *MessageDef) String() string {

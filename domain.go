@@ -7,7 +7,6 @@ import (
 	"github.com/vizidrix/crypto"
 	"log"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -20,61 +19,35 @@ var (
 	ErrInvalidAggregate      = errors.New("invalid aggregate in definition")
 	ErrInvalidMessage        = errors.New("invalid message in definition")
 	ErrInvalidMessageVersion = errors.New("invalid message version in defintion")
+	ErrCommandTypeNotFound   = errors.New("command type not found in domain")
+	ErrEventTypeNotFound     = errors.New("event type not found in domain")
 )
 
 const slash = "/"
 
 func DomainFromMeta(meta interface{}) Domain {
 	d := MustCompile(meta)
-	log.Printf("\nLoaded Domain From Meta [ %s ]", d)
+	log.Printf("%s", d)
 	return d
 }
 
-func NewMessageTypeContainer(defs ...*MessageTypeDef) MessageTypeContainer {
-	sort.Sort(ByPurposeAndName(defs))
-	l := len(defs)
-	r := &MessageTypeContainerDef{
-		defs:          defs,
-		command_count: 0,
-		cache_all:     make([]MessageType, l, l),
-		cache_type:    make(map[string]MessageType),
-		cache_typeid:  make(map[MessageTypeId]MessageType),
-	}
-	for i, m := range defs {
-		r.cache_all[i] = m
-		t := reflect.TypeOf(m.New())
-		if t.Kind() == reflect.Ptr {
-			t = t.Elem()
-		}
-		var b bytes.Buffer
-		b.WriteString(t.PkgPath())
-		b.WriteString(slash)
-		b.WriteString(t.Name())
-		r.cache_type[b.String()] = m
-		r.cache_typeid[m.MessageTypeId()] = m
-		if r.command_count == 0 {
-			if !m.iscommand { // Swap to event parsing
-				r.command_count = i
-			}
-		}
-	}
-	return r
-}
-
 type DomainDef struct {
-	uri                  string
-	id                   int64
-	name                 string
-	version              int32
-	proto                func() Aggregate
-	numbcommand          int
-	messagetypecontainer MessageTypeContainer
+	uri              string
+	id               int64
+	name             string
+	version          int32
+	proto            func() Aggregate
+	numcommand       int
+	messagetypes     []MessageType
+	messagetype_defs []MessageTypeDef
+	command_lookup   map[reflect.Type]*MessageTypeDef
+	event_lookup     map[reflect.Type]*MessageTypeDef
 }
 
 func (d *DomainDef) String() string {
 	b := &bytes.Buffer{}
 	b.WriteString(fmt.Sprintf("\n\nDOMAIN [ %s v%d ] @ [ %s ] id[ %X ]", d.name, d.version, d.uri, uint64(d.id)))
-	for i, m := range d.MessageTypes().All() {
+	for i, m := range d.MessageTypes() {
 		b.WriteString(fmt.Sprintf("\n\t[%d]: %s", i, m))
 	}
 	return b.String()
@@ -100,167 +73,28 @@ func (d *DomainDef) NewAggregate() Aggregate {
 	return d.proto()
 }
 
-func (d *DomainDef) MessageTypes() MessageTypeContainer {
-	return d.messagetypecontainer
+func (d *DomainDef) MessageTypes() []MessageType {
+	return d.messagetypes
 }
 
-type MessageTypeSetDef struct {
-	iscommands bool
-	parent     *MessageTypeContainerDef
+func (d *DomainDef) MessageTypeDefs() []MessageTypeDef {
+	return d.messagetype_defs
 }
 
-func (set *MessageTypeSetDef) All() []MessageType {
-	if set.iscommands {
-		return set.parent.cache_all[:set.parent.command_count]
-	} else {
-		return set.parent.cache_all[set.parent.command_count:]
-	}
-}
-
-func (set *MessageTypeSetDef) ByInstance(t interface{}) (r MessageType) {
-	r = set.parent.ByInstance(t)
-	if set.iscommands != r.IsCommand() {
-		return nil
+func (d *DomainDef) CommandType(m MessageDefiner) (t MessageType, err error) {
+	var ok bool
+	if t, ok = d.command_lookup[reflect.TypeOf(m)]; !ok {
+		err = ErrCommandTypeNotFound
 	}
 	return
 }
 
-func (set *MessageTypeSetDef) ByMessageTypeId(id MessageTypeId) (r MessageType) {
-	r = set.parent.ByMessageTypeId(id)
-	if set.iscommands != r.IsCommand() {
-		return nil
+func (d *DomainDef) EventType(m MessageDefiner) (t MessageType, err error) {
+	var ok bool
+	if t, ok = d.event_lookup[reflect.TypeOf(m)]; !ok {
+		err = ErrEventTypeNotFound
 	}
 	return
-}
-
-func (set *MessageTypeSetDef) ByMessageTypeIds(ids ...MessageTypeId) (r []MessageType) {
-	l := len(ids)
-	r = make([]MessageType, l, l)
-	for i, id := range ids {
-		r[i] = set.parent.ByMessageTypeId(id)
-		if set.iscommands != r[i].IsCommand() {
-			return nil
-		}
-	}
-	return
-}
-
-type MessageTypeContainerDef struct {
-	defs          []*MessageTypeDef
-	command_count int
-	cache_all     []MessageType
-	cache_type    map[string]MessageType
-	cache_typeid  map[MessageTypeId]MessageType
-}
-
-func (set *MessageTypeContainerDef) All() []MessageType {
-	return set.cache_all
-}
-
-func (set *MessageTypeContainerDef) ByInstance(t interface{}) MessageType {
-	t_type := reflect.TypeOf(t)
-	if t_type.Kind() == reflect.Ptr {
-		t_type = t_type.Elem()
-	}
-	var b bytes.Buffer
-	b.WriteString(t_type.PkgPath())
-	b.WriteString(slash)
-	b.WriteString(t_type.Name())
-	return set.cache_type[b.String()]
-}
-
-func (set *MessageTypeContainerDef) ByMessageTypeId(id MessageTypeId) MessageType {
-	return set.cache_typeid[id]
-}
-
-func (set *MessageTypeContainerDef) ByMessageTypeIds(ids ...MessageTypeId) []MessageType {
-	l := len(ids)
-	r := make([]MessageType, l, l)
-	for i := 0; i < l; i++ {
-		r[i] = set.cache_typeid[ids[i]]
-	}
-	return r
-}
-
-func (set *MessageTypeContainerDef) Commands() MessageTypeSet {
-	return &MessageTypeSetDef{
-		iscommands: true,
-		parent:     set,
-	}
-}
-
-func (set *MessageTypeContainerDef) Events() MessageTypeSet {
-	return &MessageTypeSetDef{
-		iscommands: false,
-		parent:     set,
-	}
-}
-
-type MessageTypeDef struct {
-	domain        *DomainDef
-	iscommand     bool
-	messagetypeid MessageTypeId
-	displayname   string
-	lowername     string
-	canonicalname string
-	version       uint8
-	id            int64
-	proto         func() MessageDefiner
-}
-
-func (m *MessageTypeDef) String() string {
-	b := bytes.Buffer{}
-	t := "CMD"
-	if !m.iscommand {
-		t = "EVT"
-	}
-	b.WriteString(fmt.Sprintf("%s { %s }", t, m.CanonicalName()))
-	return b.String()
-}
-
-type ByPurposeAndName []*MessageTypeDef
-
-func (set ByPurposeAndName) Len() int      { return len(set) }
-func (set ByPurposeAndName) Swap(i, j int) { set[i], set[j] = set[j], set[i] }
-func (set ByPurposeAndName) Less(i, j int) bool {
-	return (set[i].IsCommand() && !set[j].IsCommand()) ||
-		set[i].CanonicalName() < set[j].CanonicalName()
-}
-
-func (d *MessageTypeDef) Domain() Domain {
-	return d.domain
-}
-
-func (d *MessageTypeDef) New() MessageDefiner {
-	return d.proto()
-}
-
-func (d *MessageTypeDef) MessageTypeId() MessageTypeId {
-	return d.messagetypeid
-}
-
-func (d *MessageTypeDef) IsCommand() bool {
-	return d.iscommand
-}
-
-func (d *MessageTypeDef) DisplayName() string {
-	return d.displayname
-}
-
-func (d *MessageTypeDef) LowerName() string {
-	return d.lowername
-}
-
-func (d *MessageTypeDef) CanonicalName() string {
-	return d.canonicalname
-}
-
-func (d *MessageTypeDef) Version() uint8 {
-	return d.version
-}
-
-func (d *MessageTypeDef) Id() int64 {
-	return d.id
 }
 
 var (
@@ -324,8 +158,13 @@ func Compile(meta interface{}) (Domain, error) {
 	if t_events, err = type_by_name("Events"); err != nil {
 		return nil, ErrEventsNotProvided
 	}
-	m_l := t_commands.NumField() + t_events.NumField()
-	types := make([]*MessageTypeDef, m_l, m_l)
+	c_l := t_commands.NumField()
+	e_l := t_events.NumField()
+	m_l := c_l + e_l
+	defs := make([]MessageTypeDef, m_l, m_l)
+	types := make([]MessageType, m_l, m_l)
+	command_lookup := make(map[reflect.Type]*MessageTypeDef)
+	event_lookup := make(map[reflect.Type]*MessageTypeDef)
 	id := crypto.CrcHash64([]byte(uri))
 	name := tokens[tokens_l-2]
 	proto := func() Aggregate {
@@ -373,9 +212,10 @@ func Compile(meta interface{}) (Domain, error) {
 				return reflect.New(t_sf).Interface().(MessageDefiner)
 			}
 			m_id := m(id, v)
-			def := &MessageTypeDef{
+			iscommand := m_id.IsCommand()
+			def := MessageTypeDef{
 				domain:        d,
-				iscommand:     m_id.IsCommand(),
+				iscommand:     iscommand,
 				messagetypeid: m_id,
 				displayname:   name,
 				lowername:     lower,
@@ -384,7 +224,13 @@ func Compile(meta interface{}) (Domain, error) {
 				id:            id,
 				proto:         p,
 			}
+			defs[j] = def
 			types[j] = def
+			if iscommand {
+				command_lookup[t_sf] = &def
+			} else {
+				event_lookup[t_sf] = &def
+			}
 			j++
 		}
 		return nil
@@ -395,7 +241,9 @@ func Compile(meta interface{}) (Domain, error) {
 	if err = parser(t_events, MakeVersionedEventType); err != nil {
 		return nil, err
 	}
-	d.messagetypecontainer = NewMessageTypeContainer(types...)
-
+	d.messagetype_defs = defs
+	d.messagetypes = types
+	d.command_lookup = command_lookup
+	d.event_lookup = event_lookup
 	return d, nil
 }
